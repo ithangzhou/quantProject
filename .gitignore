@@ -2,7 +2,7 @@
 build/
 dist/
 *.so
-# .*
+.*
 *~
 */gmcache
 */__pycache__
