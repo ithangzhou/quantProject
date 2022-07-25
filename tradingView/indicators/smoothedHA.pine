@@ -1,0 +1,259 @@
+// This source code provided free and open-source as defined by the terms of the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/)
+// with the following additional requirements:
+//
+// 1. Citations for sources and references must be maintained and updated when appropriate
+// 2. Links to strategy references included in indicator tooptips and/or alerts should be retained to give credit to the original source
+//             while also providing a freely available source of information on proper use and interpretation
+//
+// Author:  SamAccountX
+//
+// The intent of this indicator is to provide a more customizable and refined version of the Smoothed Heiken Ashi indicator.  In addition
+// to converting to Pinescript v5, numerous additional enhancements have been made to improve user customization options, settings
+// clarity, and provide more meaningful context for user configuration options.
+//
+// References:
+//    1. Forked from "Modified Smoothed Heiken Ashi" by badshah_e_alam - https://www.tradingview.com/script/VCZ9jBC3
+//        Author above cited additional inspiration from The Secret Mindset channel on YouTube
+//    2. Indicator above is based on "Smoothed Heiken Ashi Candles v1" by jackvmk - https://www.tradingview.com/script/ROokknI2
+//    3. Referernce paper on the original Smoothed HA formulas
+//          https://www.researchgate.net/publication/328811639_SMOOTHED_HEIKIN-ASHI_ALGORITHMS_OPTIMIZED_FOR_AUTOMATED_TRADING_SYSTEMS#read
+//    4. Reference on the more common implementation formulas (using double-smoothing):
+//          https://www.sierrachart.com/index.php?page=doc/StudiesReference.php&ID=314&Name=Heikin-Ashi_Smoothed
+// 
+// @version=5
+indicator(title='Smoothed Heiken Ashi - SamX', shorttitle='Smoothed HA', overlay=true)
+
+// Inputs
+// Inputs group 1 - Display & Timeframe Settings
+g_TimeframeSettings = 'Display & Timeframe Settings'
+time_frame = input.timeframe(title='Timeframe for HA candle calculation', defval='', group=g_TimeframeSettings, tooltip='Select the timeframe to use for calculating the smoothed ' +
+                 'HA candles.  The default value is to use the current chart timeframe, but altering this will allow you to have the indicator reflect a higher or lower timeframe. \n\n' +
+                 'Note: Selecting a lower timeframe than the current chart timeframe may not result in more precise candles as the display will still be limited to the current timeframe resolution.') 
+// I decided to add just a couple display-related settings here
+colorBullish = input.color(title='Color for bullish candle (Close > Open)', defval=color.rgb(255, 255, 255, 0), tooltip='Select the color to use to denote a bullish candle (where price closed above the open). \n\n' +
+                 'Note: Any changes to the "Style" tab will override this setting.  Actual doji candles (Open == Close) inherit the color of the previous candle.')
+colorBearish = input.color(title='Color for bearish candle (Close < Open)', defval=color.rgb(255, 0, 255, 0), tooltip='Select the color to use to denote a bearish candle (where price closed below the open). \n\n' +
+                 'Note: Any changes to the "Style" tab will override this setting.  Actual doji candles (Open == Close) inherit the color of the previous candle.')
+showWicks = input.bool(title="Show Wicks", defval=true, group=g_TimeframeSettings, tooltip='If checked (default), this indicator will paint wicks for the smoothed HA candles. \n\n' +
+                 'This can be helpful with shorter smooting periods, but many people like to hide wicks for longer periods to de-clutter the chart a bit. \n\n' +
+                 'Note: By default, wick color will match the candle body color.  This can be overridden in the "Styles" tab.')
+
+
+// Inputs group 2 - Smoothed HA settings
+g_SmoothedHASettings = 'Smoothed HA Settings'
+smoothedHALength = input.int(title='HA Price Input Smoothing Length', minval=1, maxval=500, step=1, defval=10, group=g_SmoothedHASettings, tooltip='This input determines the number of time intervals (i.e. candles) ' +
+                 'to use when calculating a single smoothed HA candle.  Lower values will be more responsive to momentum shifts, while higher values will be better able to show sustained trends even ' +
+                 'during a moderate pull-back. \n\n' +
+                 'Note: A value of 1 (no matter the moving average type selected) will result in a standard HA candle, which may be desirable if you wish to see both regular and HA candles on the same ' +
+                 'chart simultaneously (in which case you should un-check "Enable double-smoothing" below).')
+smoothedMAType = input.string(title='Moving Average Calculation', group=g_SmoothedHASettings, options=['Exponential', 'Simple', 'Smoothed', 'Weighted', 'Linear', 'Hull', 'Arnaud Legoux'], defval='Exponential', tooltip='Type of moving average calculation to use ' +
+                 'for calculating the smoothed HA candles (default is Exponential (EMA)).')
+smoothedHAalmaSigma = input.float(title="ALMA Sigma", defval=6, minval=0, maxval=100, step=0.1, group=g_SmoothedHASettings, tooltip='Standard deviation applied to the ALMA MA.  Higher values tend to make the line smoother.  \n\n' +
+                 'Only relevant when "Arnaud Legoux" is selected as the MA type above.  Default: 6')
+smoothedHAalmaOffset = input.float(title="ALMA Offset", defval=0.85, minval=0, maxval=1, step=0.01, group=g_SmoothedHASettings, tooltip='Gaussian offset applied to the ALMA MA.  Higher values tend to make the line smoother, while lower values make it more responsive. \n\n' +
+                 'Only relevant when "Arnaud Legoux" is selected as the MA type above.  Default: 0.85')
+
+// Inputs group 3 - Double-smooth settings
+g_DoubleSmoothingSettings = 'Double-smoothed HA Settings'
+doDoubleSmoothing = input.bool(title='Enable double-smoothing', defval=true, group=g_DoubleSmoothingSettings, tooltip='Check this box to apply a secondary moving average to further smooth ' +
+                 'the smoothed HA candles. \n\n' +
+                 'While this may seem counter-intuitive, most versions of this indicator do use double-smoothing, hence the default value is true/checked.')
+doubleSmoothedHALength = input.int(title='HA Second Smoothing Length', minval=1, maxval=500, step=1, defval=10, group=g_DoubleSmoothingSettings, tooltip='This input defines how many of the smoothed HA candle ' +
+                 'price points to include for calculating a double-smoothed HA candle.  \n\n' +
+                 'Similar to how the comparable "Smoothed HA Settings" setting above use pure price data to calculate and construct a smoothed HA candle, this will use the output open, high, low, and close ' +
+                 'of the above pre-smoothed candles and apply a second level of smoothing on top of them in a similar method (calculate a new average open, high, low, and close, then apply the HA formula ' +
+                 'to those new values to determing what to print as the output). \n\n' +
+                 'Also, a value of 1 for this setting will be the same as un-checking the "Enable double-smoothing" box.')
+doubleSmoothedMAType = input.string(title='Double-Smoothing Moving Average Calculation', group=g_DoubleSmoothingSettings, options=['Exponential', 'Simple', 'Smoothed', 'Weighted', 'Linear', 'Hull', 'Arnaud Legoux'], defval='Exponential', tooltip='Type of moving average calculation to use ' +
+                 'for calculating the second smoothing applied to the smoothed HA candles (default is Exponential (EMA)).')
+doubleSmoothedHAalmaSigma = input.float(title="ALMA Sigma", defval=6, minval=0, maxval=100, step=0.1, group=g_DoubleSmoothingSettings, tooltip='Standard deviation applied to the ALMA MA above.  Higher values tend to make the line smoother.  \n\n' +
+                 'Only relevant when "Arnaud Legoux" is selected as the MA type above.  Default: 6')
+doubleSmoothedHAalmaOffset = input.float(title="ALMA Offset", defval=0.85, minval=0, maxval=1, step=0.01, group=g_DoubleSmoothingSettings, tooltip='Gaussian offset applied to the ALMA MA above.  Higher values tend to make the line smoother, while lower values make it more responsive. \n\n' +
+                 'Only relevant when "Arnaud Legoux" is selected as the MA type above.  Default: 0.85')
+                 
+// Define a function for calculating the smoothed moving average, as there is no built-in function for this...
+smoothedMovingAvg(src, len) => 
+	smma = 0.0
+	// TV will complain about the use of the ta.sma function use inside a function saying that it should be called on each calculation, 
+	// but since we're only using it once to set the initial value for the smoothed MA (when the previous smma value is NaN - Not a Number)
+	// and using the previous smma value for each subsequent iteration, this can be safely ignored
+	smma := na(smma[1]) ? ta.sma(src, len) : (smma[1] * (len - 1) + src) / len 
+	smma
+	
+// Define utility functions for calculating HA candle values
+// HA Open
+getHAOpen(prevOpen, prevClose) =>
+    haOpen = 0.0
+    haOpen := ((prevOpen + prevClose)/2)
+    haOpen
+
+// HA High
+getHAHigh(o, h, c) =>
+    haHigh = 0.0
+    haHigh := math.max(h, o, c)
+    haHigh
+
+// HA Low
+getHALow(o, l, c) =>
+    haLow = 0.0
+    haLow := math.min(o, l, c)
+    haLow
+    
+// HA Close
+getHAClose(o, h, l, c) =>
+    haClose = 0.0
+    haClose := ((o + h + l + c)/4)
+    haClose
+	
+// Some utility functions for working with the various price manipulations
+// Get the MA value for an input source and length...
+getMAValue(src, len, type, isDoubleSmooth) =>
+	maValue = 0.0
+	if (type == 'Exponential')
+		maValue := ta.ema(source=src, length=len)
+	else if (type == 'Simple')
+		maValue := ta.sma(source=src, length=len)
+	else if (type == 'Smoothed')
+		maValue := smoothedMovingAvg(src=src, len=len)
+	else if (type == 'Weighted')
+		maValue := ta.wma(source=src, length=len)
+	else if (type == 'Linear')
+		maValue := ta.linreg(source=src, length=len, offset=0)
+	else if (type == 'Hull')
+		maValue := ta.hma(source=src, length=len)
+	else if (type == 'Arnaud Legoux')
+		maValue := ta.alma(series=src, length=len, offset=(isDoubleSmooth ? doubleSmoothedHAalmaOffset : smoothedHAalmaOffset), sigma=(isDoubleSmooth ? doubleSmoothedHAalmaSigma : smoothedHAalmaSigma))
+	else 
+		maValue := na
+	maValue
+
+// Begin active processing code...
+// Explicitly define our ticker to help ensure that we're always getting ACTUAL price instead of relying on the input
+// ticker info and input vars (as they tend to inherit the type from what's displayed on the current chart)
+realPriceTicker = ticker.new(prefix=syminfo.prefix, ticker=syminfo.ticker)
+
+// This MAY be unnecessary, but in testing I've found some oddities when trying to use this on varying chart types
+// like on the HA chart, where the source referece for the MA calculations skews to the values for the current chart type
+// instead of the expected pure-price values.  For example, the 'source=close' reference - 'close' would be actual price
+// close on a normal candlestick chart, but would be the HA close on the HA chart.
+actualOpen = request.security(symbol=realPriceTicker, timeframe=time_frame, expression=open, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+actualHigh = request.security(symbol=realPriceTicker, timeframe=time_frame, expression=high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+actualLow = request.security(symbol=realPriceTicker, timeframe=time_frame, expression=low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+actualClose = request.security(symbol=realPriceTicker, timeframe=time_frame, expression=close, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// Get the MA values from actual price
+smoothedMA1open = getMAValue(actualOpen, smoothedHALength, smoothedMAType, false) 
+smoothedMA1high = getMAValue(actualHigh, smoothedHALength, smoothedMAType, false) 
+smoothedMA1low = getMAValue(actualLow, smoothedHALength, smoothedMAType, false) 
+smoothedMA1close = getMAValue(actualClose, smoothedHALength, smoothedMAType, false)
+
+// Next up is to apply the Heiken Ashi transformation calculations using the above smoothed OHLC values.
+// This will result in the official "Smoothed Heiken Ashi Candle"
+// The formulas for the HA open, high, low, and close are noted below in comments,
+// along with the subsequent code to compute their current values...
+//
+// Close = Average of all 4 values for the current candle - open, high, low, and close
+//      (open1MA + high1MA + low1MA + close1MA) / 4
+smoothedHAClose = getHAClose(smoothedMA1open, smoothedMA1high, smoothedMA1low, smoothedMA1close)
+
+// Open = If the previous open or close resolves to 'NaN' (Not a Number), add the current
+//      values of open1MA and close1MA and divide by 2 to get the average.  Otherwise, add the open1MA and close1MA of the previous candle
+//      and take the average value (by dividing by 2) as the HA open
+//
+// Since we need to self-reference previous values of this variable, we need to define it with an initial starting value,
+// then use the mutable operator to update the value if it can
+smoothedHAOpen = smoothedMA1open
+smoothedHAOpen := na(smoothedHAOpen[1]) ? smoothedMA1open : getHAOpen(smoothedHAOpen[1], smoothedHAClose[1])
+
+// High = Highest value of the current candle's HA open, high, and HA close
+// smoothedHAHigh = getHAHigh(smoothedHAOpen, smoothedMA1high, smoothedMA1close)
+smoothedHAHigh = getHAHigh(smoothedHAOpen, smoothedMA1high, smoothedHAClose)
+
+// Low = Lowest value of the current candle's open, low, and close
+smoothedHALow =  getHALow(smoothedHAOpen, smoothedMA1low, smoothedHAClose)
+
+
+// Now to have our fun with double-smoothing...  Since we're making this optional, we'll first
+// start by pre-setting our plot variables to the single-smoothed values.  Then check if the
+// doDoubleSmoothing option is selected.  If it is, we'll execute the double-smoothing calculations
+// and update our plot variables.  Otherwise, it'll skip that processing and go right to plotting...
+openToPlot = smoothedHAOpen
+closeToPlot = smoothedHAClose
+highToPlot = smoothedHAHigh
+lowToPlot = smoothedHALow
+
+// Now for the double-smoothing fun...
+if (doDoubleSmoothing)
+    // So here we have to do the double-smoothing...  Fortunately, this is going to be relatively easy
+    // compared to the earlier fun we had with the initial smoothed HA candle calculations.  The hard
+    // work calculating the initial smoothed HA candles is done, the second smoothing is then applied
+    // to the values of those smoothed HA candles.
+    //
+    // Double-smoothed Open
+    openToPlot := getMAValue(smoothedHAOpen, doubleSmoothedHALength, doubleSmoothedMAType, true)
+    closeToPlot := getMAValue(smoothedHAClose, doubleSmoothedHALength, doubleSmoothedMAType, true)
+    highToPlot := getMAValue(smoothedHAHigh, doubleSmoothedHALength, doubleSmoothedMAType, true)
+    lowToPlot := getMAValue(smoothedHALow, doubleSmoothedHALength, doubleSmoothedMAType, true)
+    //na
+// Double-smoothing was disabled by the user, so do nothing
+else
+    na
+
+// Since we will want to color the candle to distinguish between open > close (red) and open < close (green),
+// we will pre-define our candle color before plotting the actual candle to simplify the 'plotcandle' function's color input.
+// To help simplify this a bit, we're going to default the candle wick colors to match the candle body's color.  Users
+// should be able to override these defaults in the "Style" configuration tab to their own liking.
+//
+// We'll even get fancy and if the current candle is an EXACT doji (open == close), use the previous candle's color
+// The logical ordering of this conditional goes like this...
+//      First check if the close is greater than the open.  If so, return green.
+//      If not, check if the close is less than the open.  If so, return red.
+//      If not (which will only occur if the open and close are exactly equal), return the
+//          color used on the previous candle.
+//
+// Note:  Since we need to take into account the possibility that there is no previous candle, we'll defensively-code
+//          this so that we pre-assign a color (Black and transparent) to our color variable to use as a fail-safe.
+// 
+// While this is an extreme edge-case, we also want to try and account for the possibility that a pure doji is the
+// first candle to print.  Since it's not easy to check a previous candle's actual color value, we'll work around
+// this by adding another conditional check to see if the previous candle had a value for 'smoothedHAOpen'
+//
+// Like Arty, I prefer colors that really pop, so that's what we're going to use...
+// Depending on how this looks in the config "Style" tab, I may define these as input variables.
+candleColor = color.rgb(0, 0, 0, 100)
+candleColor := (closeToPlot > openToPlot) ? colorBullish : 
+     (closeToPlot < openToPlot) ? colorBearish : candleColor[1]
+
+// Now we can do a plot of our smoothed HA candles... 
+plotcandle(open=openToPlot, high=highToPlot, low=lowToPlot, close=closeToPlot, title="Smoothed HA", color=candleColor, wickcolor=(showWicks ? candleColor : na), bordercolor=candleColor)
+
+// Now for what everyone always loves...  Alerts...
+// The only reasonable alert that comes to mind at present is a a color change alert
+// (e.g. previous candle printed as bearish color, next candle printed as bullish color, and vice versa).
+//
+// While I don't see any reason I'd personally intend to use this as an alert (this indicator is better used as a
+// trend identification/bias indicator to supplement more responsive signaling indicators), we'll make a couple anyways...
+
+// First, we'll define variables as our alert triggers...
+// For the bullish change, check if the previous candle closed lower than the open.  If so, check if the current candle
+// closed above the open.  If both checks are true, signal the alert.
+isBullishColorChange = ((closeToPlot[1] < openToPlot[1]) ? (closeToPlot > openToPlot ? true : false) : false)
+// And the inverse for bearish...
+isBearishColorChange = ((closeToPlot[1] > openToPlot[1]) ? (closeToPlot < openToPlot ? true : false) : false)
+
+// Important to note here is the addition of the 'barstate.isconfirmed' to the conditions...  This built-in variable only evaluates to 'true' when 
+// the current candle is having it's final calculation performed (it's in the act of closing, and the values calculated will be the final values for that candle)
+//
+// As Arty would say, "Wait for the damn candle to close!" - so that's exactly what we're going to do... We will call this a "confirmed" signal...
+isConfirmedBullishColorChange = isBullishColorChange and barstate.isconfirmed
+isConfirmedBearishColorChange = isBearishColorChange and barstate.isconfirmed
+
+// Now we have our trigger for alerts.  Let's start with the older-style alertconditions...
+alertcondition(condition=isConfirmedBullishColorChange, title="Smoothed HA Bear -> Bull", message="Smoothed Heiken Ashi detected a change in candle direction from bearish to bullish.")
+alertcondition(condition=isConfirmedBearishColorChange, title="Smoothed HA Bull -> Bear", message="Smoothed Heiken Ashi detected a change in candle direction from bullish to bearish.")
+
+// And the newer style alert functions...
+if (isConfirmedBullishColorChange)
+    alert(freq=alert.freq_once_per_bar_close, message="Smoothed Heiken Ashi detected a change in candle direction from bearish to bullish.")
+if (isConfirmedBearishColorChange)
+    alert(freq=alert.freq_once_per_bar_close, message="Smoothed Heiken Ashi detected a change in candle direction from bullish to bearish.")
