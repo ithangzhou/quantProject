@@ -74,10 +74,11 @@ doubleSmoothedHAalmaOffset = input.float(title="ALMA Offset", defval=0.85, minva
 // Define a function for calculating the smoothed moving average, as there is no built-in function for this...
 smoothedMovingAvg(src, len) => 
 	smma = 0.0
+	tmp_sma = ta.sma(src, len)
 	// TV will complain about the use of the ta.sma function use inside a function saying that it should be called on each calculation, 
 	// but since we're only using it once to set the initial value for the smoothed MA (when the previous smma value is NaN - Not a Number)
 	// and using the previous smma value for each subsequent iteration, this can be safely ignored
-	smma := na(smma[1]) ? ta.sma(src, len) : (smma[1] * (len - 1) + src) / len 
+	smma := na(smma[1]) ? tmp_sma : (smma[1] * (len - 1) + src) / len 
 	smma
 	
 // Define utility functions for calculating HA candle values

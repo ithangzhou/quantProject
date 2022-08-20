@@ -1,4 +1,5 @@
-study("Normalized MACD",shorttitle='N MACD')
+//@version=5
+indicator("Normalized MACD",shorttitle='N MACD')
 sma = input(12,title='Fast MA')
 lma = input(21,title='Slow MA')
 tsp = input(9,title='Trigger')
@@ -6,27 +7,27 @@ np = input(50,title='Normalize')
 h=input(true,title='Histogram')
 docol = input(false,title="Color Change")
 dofill=input(false,title="Fill")
-type = input(1,minval=1,maxval=3,title="1=Ema, 2=Wma, 3=Sma")
+type = input.int(1,minval=1,maxval=3,title="1=Ema, 2=Wma, 3=Sma")
 
-sh = type == 1 ? ema(close,sma)  
- : type == 2 ? wma(close, sma)
- : sma(close, sma)
+sh = type == 1 ? ta.ema(close,sma)  
+ : type == 2 ? ta.wma(close, sma)
+ : ta.sma(close, sma)
 
-lon=type == 1 ? ema(close,lma) 
- : type == 2 ? wma(close, lma)
- : sma(close, lma)
+lon=type == 1 ? ta.ema(close,lma) 
+ : type == 2 ? ta.wma(close, lma)
+ : ta.sma(close, lma)
 
-ratio = min(sh,lon)/max(sh,lon)
-Mac = (iff(sh>lon,2-ratio,ratio)-1)
-MacNorm = ((Mac-lowest(Mac, np)) /(highest(Mac, np)-lowest(Mac, np)+.000001)*2)- 1
-MacNorm2 = iff(np<2,Mac,MacNorm)
-Trigger = wma(MacNorm2, tsp)
+ratio = math.min(sh,lon)/math.max(sh,lon)
+Mac = ((sh>lon)? 2-ratio : ratio)-1
+MacNorm = ((Mac-ta.lowest(Mac, np)) /(ta.highest(Mac, np)-ta.lowest(Mac, np)+.000001)*2)- 1
+MacNorm2 = np<2?Mac:MacNorm
+Trigger = ta.wma(MacNorm2, tsp)
 Hist = (MacNorm2-Trigger)
 Hist2 = Hist>1?1:Hist<-1?-1:Hist
-swap=Hist2>Hist2[1]?green:red
-swap2 = docol ? MacNorm2 > MacNorm2[1] ? #0094FF : #FF006E : red
-plot(h?Hist2:na,color=swap,style=columns,title='Hist',histbase=0)
+swap=Hist2>Hist2[1]?color.green:color.red
+swap2 = docol ? MacNorm2 > MacNorm2[1] ? #0094FF : #FF006E : color.red
+plot(h?Hist2:na,color=swap,style=plot.style_columns,title='Hist',histbase=0)
 plot(MacNorm2,color=swap2,title='MacNorm')
-plot(dofill?MacNorm2:na,color=MacNorm2>0?green:red,style=columns)
-plot(Trigger,color=yellow,title='Trigger')
+plot(dofill?MacNorm2:na,color=MacNorm2>0?color.green:color.red,style=plot.style_columns)
+plot(Trigger,color=color.yellow,title='Trigger')
 hline(0)
