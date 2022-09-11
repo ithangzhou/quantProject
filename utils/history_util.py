@@ -6,7 +6,6 @@ import os
 import talib
 import numpy as np
 import pandas as pd
-# import requests
 import talib as ta
 import time
 
@@ -24,9 +23,6 @@ def gm_history(symbol, frequency, start_time, end_time, fields=None, skip_suspen
         fill_missing=None,df=True):
     return history(symbol=symbol,frequency=frequency,start_time=start_time
                    ,end_time=end_time,fields=fields,df=True)
-
-
-
 
 if __name__ == '__main__':
     set_token('248ec0bf0d477b56513715b3a33825ba699036cc')

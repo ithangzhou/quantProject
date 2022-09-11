@@ -1,9 +1,7 @@
 *.pyc
 build/
 dist/
-*.so
 .*
-*~
 */gmcache
 */__pycache__
 gmcache/
