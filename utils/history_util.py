@@ -1,4 +1,3 @@
-from posixpath import split
 from turtle import Turtle
 from typing import Tuple
 from gm.api import *
