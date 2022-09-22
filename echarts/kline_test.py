@@ -20,8 +20,9 @@ freq = '1d'
 start_time='2020-07-28'
 end_time='2022-07-30'
 fields='open,close,low,high,eob,amount,volume'
-short_gap=10
-long_gap=60
+short_gap=5
+long_gap=20
+ext_gap=60
 
 def kline():
     set_token(gm_token)
@@ -34,6 +35,7 @@ def kline():
     close_price=res.iloc[:,1]
     maShort=ta.EMA(close_price,short_gap).values.tolist()
     maLong=ta.EMA(close_price,long_gap).values.tolist()
+    maExt=ta.EMA(close_price,ext_gap).values.tolist()
     # macd, macdsignal, macdhist = MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
     macd, macdsignal, macdhist=ta.MACD(close_price,fastperiod=12,slowperiod=26,signalperiod=9)
     
@@ -41,32 +43,92 @@ def kline():
         Kline()
         .add_xaxis(xaxis_data=xaxis)
         .add_yaxis('KLine_demo',price)
-        .set_global_opts(yaxis_opts=opts.AxisOpts(is_scale=True)
-                          ,xaxis_opts=opts.AxisOpts(is_scale=True)
-                          ,title_opts=opts.TitleOpts(title='Kline_demo'))
+        .add_yaxis(
+            series_name='Kline'
+            , y_axis=price
+            , itemstyle_opts=opts.ItemStyleOpts(color='#ec0000',color0='#00da3c')
+        )
+        .set_global_opts(
+            legend_opts=opts.LegendOpts(
+                is_show=False,pos_bottom=10,pos_left="center"
+            )
+            ,datazoom_opts=[
+                opts.DataZoomOpts(
+                    is_show=False
+                    , type_="inside"
+                    ,xaxis_index=[0,1]
+                    ,range_start=98
+                    ,range_end=100
+                )
+                ,opts.DataZoomOpts(
+                    is_show=True
+                    ,xaxis_index=[0,1]
+                    ,type_="slider"
+                    ,pos_top="85%"
+                    ,range_start=98
+                    ,range_end=100
+                )
+            ]
+            ,yaxis_opts=opts.AxisOpts(
+                is_scale=True
+                , splitarea_opts=opts.SplitAreaOpts(
+                    is_show=True
+                    , areastyle_opts=opts.AreaStyleOpts(opacity=1)
+                )
+            )
+            , tooltip_opts=opts.TooltipOpts(
+                trigger="axis"
+                , axis_pointer_type="cross"
+                , background_color="rgba(245,245,245,0.8)"
+            )
+            , visualmap_opts=opts.VisualMapOpts(
+                is_show=False
+                ,dimension=2
+                ,series_index=5
+                ,is_piecewise=True
+                ,pieces=[
+                    {"value": 1,"color": "#00da3c"}
+                    ,{"value": -1,"color": "#ec0000"}
+                ]
+            )
+            , axispointer_opts=opts.AxisPointerOpts(
+                is_show=True
+                ,link=[{"xAxisIndex": "all"}]
+                ,label=opts.LabelOpts(background_color="#777")
+            )
+            ,brush_opts=opts.BrushOpts(
+                x_axis_index="all"
+                ,brush_link="all"
+                ,out_of_brush={"color": 0.1}
+                , brush_type="index"
+            )
+            )
     )
     
-    ma_short = (
+    ma = (
         Line()
         .add_xaxis(xaxis_data=xaxis)
         .add_yaxis(
             series_name="ma_short"
             ,y_axis=maShort
             ,symbol="maShot_line"
-            ,is_symbol_show=True
-            ,label_opts=opts.LabelOpts(is_show=True)
         )
-        .set_global_opts(
-            tooltip_opts=opts.TooltipOpts(is_show=True)
-            ,xaxis_opts=opts.AxisOpts(type_='category')
-            ,yaxis_opts=opts.AxisOpts(
-                type_="value"
-                ,axistick_opts=opts.AxisTickOpts(is_show=True)
-                ,splitline_opts=opts.SplitLineOpts(is_show=True)
-            )
+        .add_yaxis(
+            series_name="ma_long"
+            ,y_axis=maLong
+            ,symbol="maLong_line"
         )
+        .add_yaxis(
+            series_name="ma_ext"
+            ,y_axis=maExt
+            ,symbol="maExt_line"
+        )
+        # .set_global_opts(
+        #     tooltip_opts=opts.TooltipOpts(is_show=True)
+        #     ,xaxis_opts=opts.AxisOpts(type_='category')
+        # )
     )
-    overlap=kline.overlap(ma_short)
+    overlap=kline.overlap(ma)
     
     macd_line=(
         Line()
@@ -74,27 +136,19 @@ def kline():
         .add_yaxis(series_name='macd'
                    ,y_axis=macd.values.tolist()
                    ,symbol='macd_short'
-                   ,is_symbol_show=True
-                   ,label_opts=opts.LabelOpts(is_show=True)
                    )
-        .set_global_opts(
-            tooltip_opts=opts.TooltipOpts(is_show=True)
-        )
-    )
-    macd_line_long=(
-        Line()
-        .add_xaxis(xaxis_data=xaxis)
         .add_yaxis(series_name='macdLong'
                    ,y_axis=macdsignal.values.tolist()
                    ,symbol='macd_long'
-                   ,is_symbol_show=True
-                   ,label_opts=opts.LabelOpts(is_show=True)
+                   )
+        .add_yaxis(series_name='bar'
+                   ,y_axis=macdhist.values.tolist()
+                   ,areastyle_opts=opts.AreaStyleOpts(opacity=1, color="#C67570")
                    )
         .set_global_opts(
             tooltip_opts=opts.TooltipOpts(is_show=True)
         )
     )
-    macd_overlap=macd_line.overlap(macd_line_long)
     
     (
         Grid()
@@ -104,17 +158,17 @@ def kline():
                 height='50%'
                 ,pos_left='10%'
                 ,pos_right='10%'
-                ,is_contain_label=True
+                # ,is_contain_label=True
             )
         )
         .add(
-            macd_overlap
+            macd_line
             ,grid_opts=opts.GridOpts(
                 height ='20%'
                 ,pos_top="70%"
                 ,pos_left='10%'
                 ,pos_right='10%'
-                ,is_contain_label=True
+                # ,is_contain_label=True
             )
         )
      .render(out_file)
